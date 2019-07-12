@@ -1,0 +1,23 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "/home/philon/linux-rpi-4.19.y/include",
+                "/home/philon/linux-rpi-4.19.y/include/uapi",
+                "/home/philon/linux-rpi-4.19.y/include/generated",
+                "/home/philon/linux-rpi-4.19.y/include/generated/uapi",
+                "/home/philon/linux-rpi-4.19.y/arch/arm/include",
+                "/home/philon/linux-rpi-4.19.y/arch/arm/include/uapi",
+                "/home/philon/linux-rpi-4.19.y/arch/arm/include/generated",
+                "/home/philon/linux-rpi-4.19.y/arch/arm/include/generated/uapi"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/arm-linux-gnueabihf-gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}
