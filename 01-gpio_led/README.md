@@ -2,7 +2,7 @@
 
 本文源码：https://github.com/philon/rpi-drivers/tree/master/01-gpio-led
 
-GPIO可以说是驱动中最最最简单的部分了，但我上网查了下，绝大部分所谓《树莓派GPIO驱动》的教程全是python、shell等编程，或者调用第三方库，根本不涉及任何ARM底层、Linux内核相关的知识。显然，这根本不是什么驱动实现，只是调用了一两个别人实现好的库函数而已，跟着那种文章走一遍，你只直到怎么用，永远不知道为什么。
+GPIO可以说是驱动中最最最简单的部分了，但我上网查了下，绝大部分所谓《树莓派GPIO驱动》的教程全是python、shell等编程，或者调用第三方库，根本不涉及任何ARM底层、Linux内核相关的知识。显然，这根本不是什么驱动实现，只是调用了一两个别人实现好的库函数而已，跟着那种文章走一遍，你只知道怎么用，永远不知道为什么。
 
 所以本文是希望从零开始，在Linux内核下实现一个真正的gpio-led驱动程序，初步体验一下Linux内核模块的开发思想，知其然，知其所以然。
 
@@ -126,4 +126,37 @@ MODULE_AUTHOR("Philon | ixx.life");
 2. 如何动态申请主从设备号
 3. 什么是Linux一切皆文件思想
 
-PS： 太晚了，今天到此结束，明日再战！
+```c
+ssize_t rgbled_read(struct file* filp, char __user* buf, size_t len, loff_t* off)
+{
+  // todo: 通过读文件获取LED状态
+}
+ssize_t rgbled_write(struct file* filp, const char __user* buf, size_t len, loff_t* off)
+{
+  // todo: 通过写文件控制LED状态
+}
+long rgbled_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
+{
+  // todo: 通过ioctl函数控制每个灯的状态
+}
+
+const struct file_operations fops = {
+  .owner = THIS_MODULE,
+  .read = rgbled_read,
+  .write = rgbled_write,
+  .unlocked_ioctl = rgbled_ioctl,
+};
+```
+
+```sh
+# 加载驱动 & 查看模块的主从设备号
+philon@rpi:~/modules$ sudo insmod rgbled.ko
+philon@rpi:~/modules$ dmesg 
+...
+[  106.818009] rgbled: no symbol version for module_layout
+[  106.818028] rgbled: loading out-of-tree module taints kernel.
+[  106.820307] rgbled device major&minor is [240:0]
+
+# 根据动态分配的设备号创建设备节点
+philon@rpi:~/modules$ sudo mknod /dev/rgbled c 240 0
+```
