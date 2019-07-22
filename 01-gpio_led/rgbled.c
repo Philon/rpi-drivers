@@ -18,47 +18,75 @@ MODULE_AUTHOR("Philon | https://ixx.life");
 #define LED_GREEN_PIN   3
 #define LED_BLUE_PIN    4
 
-static void* gpio = 0;
-static char color[32] = {0};
+static void* gpio = 0; // GPIO起始地址映射
+static bool ledstate[3] = {0}; // 三个LED的状态
 
-void gpioctl(int pin, int stat)
+// 三色LED灯不同状态组合
+static struct { const char* name; const bool pins[3]; } colors[] = {
+  { "white",  {1,1,1} },  // 白(全开)
+  { "black",  {0,0,0} },  // 黑(全关)
+  { "red",    {1,0,0} },  // 红
+  { "green",  {0,1,0} },  // 绿
+  { "blue",   {0,0,1} },  // 蓝
+  { "yellow", {1,1,0} },  // 黄
+  { "cyan",   {0,1,1} },  // 青
+  { "purple", {1,0,1} },  // 紫
+};
+
+void gpioctl(int pin, bool stat)
 {
   void* reg = gpio + (stat ? BCM2837_GPIO_SET0_OFFSET : BCM2837_GPIO_CLR0_OFFSET);
+  ledstate[pin-2] = stat;
   iowrite32(1 << pin, reg);
 }
 
 // 向用户层返回当前设备颜色值
 ssize_t rgbled_read(struct file* filp, char __user* buf, size_t len, loff_t* off)
 {
-  char data[32] = {0};
-
-  len = strlen(color) + 1;
-  sprintf(data, "%s\n", color);
-  if (copy_to_user(buf, data, len) < 0) {
-    return -EIO;
-  }
-
-  return len;
-}
-
-// 用户层通过颜色名称来控制设备
-ssize_t rgbled_write(struct file* filp, const char __user* buf, size_t len, loff_t* off)
-{
-  const char* colors[] = {"white", "black", "red", "green", "blue", "yellow", "cyan", "purple"};
-  const int pins[][3] = {{1,1,1}, {0,0,0}, {1,0,0}, {0,1,0}, {0,0,1}, {1,1,0}, {0,1,1}, {1,0,1}};
-  char data[32] = {0};
+  int rc = 0;
   int i = 0;
 
-  if (copy_from_user(data, buf, len) < 0) {
-    return -EIO;
+  // 当文件已经读过一次，返回EOF，避免重复读
+  if (*off > 0) {
+    return 0;
+  }
+  
+  for (i = 0; i < sizeof(colors) / sizeof(colors[0]); i++) {
+    const char* name = colors[i].name;
+    const bool* pins = colors[i].pins;
+    if (ledstate[0] == pins[0] && ledstate[1] == pins[1] && ledstate[2] == pins[2]) {
+      char color[32] = {0};
+      sprintf(color, "%s\n", name);
+      *off = strlen(color);
+      rc = copy_to_user(buf, color, *off);
+      return rc < 0 ? rc : *off;
+    }
   }
 
-  for (i = 0; i < 8; i++) {
-    if (!strncasecmp(colors[i], data, strlen(colors[i]))) {
-      strcpy(color, data);
-      gpioctl(LED_RED_PIN, pins[i][0]);
-      gpioctl(LED_GREEN_PIN, pins[i][1]);
-      gpioctl(LED_BLUE_PIN, pins[i][2]);
+  return -EFAULT;
+}
+
+// 通过向文件写入颜色名称，控制LED灯状态
+ssize_t rgbled_write(struct file* filp, const char __user* buf, size_t len, loff_t* off)
+{
+  char color[32] = {0};
+  int rc = 0;
+  int i = 0;
+
+  rc = copy_from_user(color, buf, len);
+  if (rc < 0) {
+    return rc;
+  }
+
+  *off = 0; // 每次控制之后，文件索引都回到开始
+
+  for (i = 0; i < sizeof(colors) / sizeof(colors[0]); i++) {
+    const char* name = colors[i].name;
+    const bool* pins = colors[i].pins;
+    if (!strncasecmp(color, name, strlen(name))) {
+      gpioctl(LED_RED_PIN, pins[0]);
+      gpioctl(LED_GREEN_PIN, pins[1]);
+      gpioctl(LED_BLUE_PIN, pins[2]);
       return len;
     }
   }
@@ -69,18 +97,10 @@ ssize_t rgbled_write(struct file* filp, const char __user* buf, size_t len, loff
 // 用户层通过ioctl函数单独控制灯的状态
 long rgbled_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 {
-  switch (cmd) {
-    case 'r':
-      gpioctl(LED_RED_PIN, arg);
-      break;
-    case 'g':
-      gpioctl(LED_GREEN_PIN, arg);
-      break;
-    case 'b':
-      gpioctl(LED_BLUE_PIN, arg);
-      break;
-    default:
-      return -ENODEV;
+  if (cmd >= 2 && cmd <= 4) {
+    gpioctl(cmd, arg);
+  } else {
+    return -ENODEV;
   }
 
   return 0;
