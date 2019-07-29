@@ -1,10 +1,10 @@
 # 模块驱动，必须以obj-m=xxx形式编写
-obj-m = key.o
+obj-m = gpiokey.o
 
 KDIR = /home/philon/linux-rpi-4.19.y
 CROSS = ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf-
 
-TEST := key_test
+TEST := gpiokey_test
 TEST_SRC := $(TEST).c
 TEST_OBJ := $(TEST).o
 

@@ -1,0 +1,7 @@
+{
+  "files.associations": {
+    "irq.h": "c",
+    "miscdevice.h": "c",
+    "gpio.h": "c"
+  }
+}

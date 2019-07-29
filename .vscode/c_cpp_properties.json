@@ -14,7 +14,8 @@
             ],
             "defines": [
                 "ARCH=arm",
-                "__KERNEL__"
+                "__KERNEL__",
+                "CONFIG_SPARSE_IRQ"
             ],
             "compilerPath": "/usr/bin/arm-linux-gnueabihf-gcc",
             "cStandard": "c11",
