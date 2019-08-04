@@ -3,6 +3,7 @@
 #include <linux/miscdevice.h> // 混杂设备相关结构
 #include <linux/gpio.h>       // 各种gpio的数据结构及函数
 #include <linux/interrupt.h>  // 内核中断相关接口
+#include <linux/delay.h>
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Philon | https://ixx.life");
@@ -52,7 +53,12 @@ static struct miscdevice dev = {
 // 按键中断“顶半部”处理函数
 static irqreturn_t on_key_press(int irq, void* dev)
 {
+  static int next = 0;
+
   printk(KERN_INFO "key0 press\n");
+  gpio_set_value(leds[next].gpio, 0);
+  next = next >= 2 ? 0 : next+1;
+  gpio_set_value(leds[next].gpio, 1);
 
   return IRQ_HANDLED;
 }

@@ -2,6 +2,9 @@
   "files.associations": {
     "irq.h": "c",
     "miscdevice.h": "c",
-    "gpio.h": "c"
+    "gpio.h": "c",
+    "driver.h": "c",
+    "consumer.h": "c",
+    "compiler.h": "c"
   }
 }
