@@ -3,17 +3,15 @@
 #include <linux/miscdevice.h> // 混杂设备相关结构
 #include <linux/gpio.h>       // 各种gpio的数据结构及函数
 #include <linux/interrupt.h>  // 内核中断相关接口
-#include <linux/delay.h>
+#include <linux/workqueue.h>
+#include <linux/timer.h>
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Philon | https://ixx.life");
 
-// 稍后由内核分配的按键中断号
-static unsigned int key_irq = 0;
-
-// 定义按键的GPIO引脚功能
+// 定义按键的GPIO引脚
 static const struct gpio key = {
-  .gpio = 17,         // 引脚号为BCM - 20
+  .gpio = 17,         // 引脚号为BCM - 17
   .flags = GPIOF_IN,  // 功能复用为输入
   .label = "Key0"     // 标示为Key0
 };
@@ -25,42 +23,32 @@ static const struct gpio leds[] = {
   { 4, GPIOF_OUT_INIT_HIGH, "LED_BLUE" },
 };
 
-static ssize_t gpiokey_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
-{
-  return 0;
-}
-// static long (*unlocked_ioctl) (struct file *, unsigned int, unsigned long);
-// static int gpiokey_open(struct inode *, struct file *);
-// static int gpiokey_close(struct inode *, struct file *)
+static unsigned int keyirq = 0;     // GPIO按键中断号
+static struct work_struct keywork;  // 按键工作队列
+static struct timer_list timer;     // 定时器作为中断延时
 
-static const struct file_operations fops = {
-  .owner = THIS_MODULE,
-  .read = gpiokey_read,
-  // .write = rgbled_write,
-  // .unlocked_ioctl = rgbled_ioctl,
-};
-
-// 定义本模块为混杂设备
-static struct miscdevice dev = {
-  .minor = 0,
-  .name = "gpio_key", // 模块名
-  .nodename = "key0", // 设备节点名 /dev/gpiokey0
-  .fops = &fops,
-  .mode = 0600
-};
-
-
-// 按键中断“顶半部”处理函数
+// 按键中断“顶半部”处理函数，启用工作队列
 static irqreturn_t on_key_press(int irq, void* dev)
 {
-  static int next = 0;
-
-  printk(KERN_INFO "key0 press\n");
-  gpio_set_value(leds[next].gpio, 0);
-  next = next >= 2 ? 0 : next+1;
-  gpio_set_value(leds[next].gpio, 1);
-
+  schedule_work(&keywork);
   return IRQ_HANDLED;
+}
+
+// 按键中断“底半部”工作队列，启动一个50ms的延时定时器
+void start_timer(struct work_struct *work)
+{
+  mod_timer(&timer, jiffies + (HZ/20));
+}
+
+// 按键防抖定时器，及处理函数
+void on_delay_50ms(struct timer_list *timer)
+{
+  static int i = 0;
+  if (gpio_get_value(key.gpio)) {
+    gpio_set_value(leds[i].gpio, 0);
+    i = ++i == 3 ? 0 : i;
+    gpio_set_value(leds[i].gpio, 1);
+  }
 }
 
 static int __init gpiokey_init(void)
@@ -75,24 +63,24 @@ static int __init gpiokey_init(void)
     }
 
   // 获取中断号
-  key_irq = gpio_to_irq(key.gpio);
-  if (key_irq < 0) {
+  keyirq = gpio_to_irq(key.gpio);
+  if (keyirq < 0) {
     printk(KERN_ERR "can not get irq num.\n");
     return -EFAULT;
   }
 
-  printk(KERN_ALERT "get irq = %d\n", key_irq);
-
   // 申请上升沿触发
-  if (request_irq(key_irq, on_key_press, IRQF_TRIGGER_RISING, "onKeyPress", (void*)&dev) < 0) {
+  if (request_irq(keyirq, on_key_press, IRQF_TRIGGER_RISING, "onKeyPress", NULL) < 0) {
     printk(KERN_ERR "can not request irq\n");
     return -EFAULT;
   }
 
-  // 使用混杂设备注册，等同于完成内核模块的所有注册工作
-  // 并在用户层自动创建和删除设备节点
-  // alloc_chrdev_region + cdev_init + cdev_add
-  misc_register(&dev);
+  // 初始化按键中断底半部(工作队列)
+  INIT_WORK(&keywork, start_timer);
+
+  // 初始化定时器
+  timer_setup(&timer, on_delay_50ms, 0);
+  add_timer(&timer);
 
   return 0;
 }
@@ -100,9 +88,9 @@ module_init(gpiokey_init);
 
 static void __exit gpiokey_exit(void)
 {
-  free_irq(key_irq, NULL);
+  free_irq(keyirq, NULL);
   gpio_free_array(leds, 3);
   gpio_free(key.gpio);
-  misc_deregister(&dev);
+  del_timer(&timer);
 }
 module_exit(gpiokey_exit);

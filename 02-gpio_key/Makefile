@@ -8,7 +8,7 @@ TEST := gpiokey_test
 TEST_SRC := $(TEST).c
 TEST_OBJ := $(TEST).o
 
-all: module test
+all: module
 
 module:
 	$(MAKE) -C $(KDIR) M=$(PWD) $(CROSS) modules
