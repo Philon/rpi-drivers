@@ -196,4 +196,4 @@ static void __exit gpiokey_exit(void)
 module_exit(gpiokey_exit);
 ```
 
-![按键中断阻塞访问效果](http://pw5e32kwk.bkt.clouddn.com/%E6%8C%89%E9%94%AE%E9%98%BB%E5%A1%9E%E5%AE%9E%E4%BE%8B.gif)
+![按键中断阻塞访问效果](https://i.loli.net/2019/08/18/iX8BPOrq1pw74aH.gif)
