@@ -1,26 +1,29 @@
 {
     "configurations": [
         {
-            "name": "Linux",
+            "name": "Mac",
             "includePath": [
-                "/home/philon/linux-rpi-4.19.y/include",
-                "/home/philon/linux-rpi-4.19.y/include/uapi",
-                "/home/philon/linux-rpi-4.19.y/include/generated",
-                "/home/philon/linux-rpi-4.19.y/include/generated/uapi",
-                "/home/philon/linux-rpi-4.19.y/arch/arm/include",
-                "/home/philon/linux-rpi-4.19.y/arch/arm/include/uapi",
-                "/home/philon/linux-rpi-4.19.y/arch/arm/include/generated",
-                "/home/philon/linux-rpi-4.19.y/arch/arm/include/generated/uapi"
+                "${workspaceFolder}/../linux-rpi-4.19.y/include",
+                "${workspaceFolder}/../linux-rpi-4.19.y/include/uapi",
+                "${workspaceFolder}/../linux-rpi-4.19.y/include/generated",
+                "${workspaceFolder}/../linux-rpi-4.19.y/include/generated/uapi",
+                "${workspaceFolder}/../linux-rpi-4.19.y/arch/arm/include",
+                "${workspaceFolder}/../linux-rpi-4.19.y/arch/arm/include/uapi",
+                "${workspaceFolder}/../linux-rpi-4.19.y/arch/arm/include/generated",
+                "${workspaceFolder}/../linux-rpi-4.19.y/arch/arm/include/generated/uapi"
             ],
             "defines": [
                 "ARCH=arm",
                 "__KERNEL__",
                 "CONFIG_SPARSE_IRQ"
             ],
-            "compilerPath": "/usr/bin/arm-linux-gnueabihf-gcc",
-            "cStandard": "c11",
+            "macFrameworkPath": [
+                "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.14.sdk/System/Library/Frameworks"
+            ],
+            "compilerPath": "/opt/arm-mac-linux-gnueabihf/bin/arm-mac-linux-gnueabihf-gcc",
+            "cStandard": "c89",
             "cppStandard": "c++17",
-            "intelliSenseMode": "gcc-x64"
+            "intelliSenseMode": "clang-x64"
         }
     ],
     "version": 4
