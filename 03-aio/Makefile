@@ -3,9 +3,9 @@ obj-m = gpiokey.o
 
 KDIR = $(shell pwd)/../../linux-rpi-4.19.y
 
-TEST := gpiokey_test
-TEST_SRC := $(TEST).c
-TEST_OBJ := $(TEST).o
+TEST_SRC := $(wildcard *_test.c)
+TEST_OBJ := $(TEST_SRC:%.c=%.o)
+TEST_OUT := $(TEST_OBJ:%.o=%)
 
 export ARCH = arm
 export CROSS_COMPILE = /opt/arm-mac-linux-gnueabihf/bin/arm-mac-linux-gnueabihf-
@@ -15,10 +15,12 @@ all: module
 module:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
 
-test: 
-	$(CROSS_COMPILE)gcc $(CFLAGS) -c $(TEST_SRC) -o $(TEST_OBJ)
-	$(CROSS_COMPILE)gcc $(LFLAGS) -o $(TEST) $(TEST_OBJ)
+test: $(TEST_OUT)
+$(TEST_OUT): %:%.o
+	$(CROSS_COMPILE)gcc $(LFLAGS) -o $@ $<
+$(TEST_OBJ): %.o:%.c
+	$(CROSS_COMPILE)gcc $(CLFAGS) -c -o $@ $<
 
 clean:
 	$(MAKE) -C $(KDIR) M=`pwd` clean
-	rm -f $(TEST_OBJ) $(TEST)
+	rm -f $(TEST_OBJ) $(TEST_OUT)

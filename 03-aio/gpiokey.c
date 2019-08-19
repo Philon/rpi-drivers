@@ -4,6 +4,7 @@
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/uaccess.h>
+#include <linux/poll.h>
 
 #define KEY_GPIO  17
 
@@ -20,6 +21,19 @@ static int gpiokey_open(struct inode *node, struct file *filp)
 static int gpiokey_close(struct inode *node, struct file *filp)
 {
   return 0;
+}
+
+static __poll_t gpiokey_poll(struct file *filp, struct poll_table_struct *wait)
+{
+  __poll_t mask = 0;;
+  
+  // 加入等待队列
+  poll_wait(filp, &r_wait, wait);
+  if (gpio_get_value(KEY_GPIO)) {
+    mask = POLLIN | POLLRDNORM;
+  }
+
+  return mask;
 }
 
 static ssize_t gpiokey_read(struct file *filp, char __user *buf, size_t len, loff_t * off)
@@ -74,6 +88,7 @@ struct file_operations fops = {
   .open = gpiokey_open,
   .release = gpiokey_close,
   .read = gpiokey_read,
+  .poll = gpiokey_poll,
   .unlocked_ioctl = gpiokey_ioctl,
 };
 
@@ -82,7 +97,7 @@ struct miscdevice gpiokey = {
   .name = "gpiokey",
   .fops = &fops,
   .nodename = "mykey",
-  .mode = 0700,
+  .mode = 0744,
 };
 
 static int __init gpiokey_init(void)
@@ -110,7 +125,7 @@ module_init(gpiokey_init);
 static void __exit gpiokey_exit(void)
 {
   misc_deregister(&gpiokey);
-  free_irq(0, NULL);
+  free_irq(press_irq, NULL);
   gpio_free(KEY_GPIO);
   del_timer(&delay);
 }

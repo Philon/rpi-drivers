@@ -4,7 +4,7 @@
 
 - 机制与策略原则
 - IO阻塞/非阻塞——read/write
-- IO复用——select/epoll
+- IO多路复用——select/epoll
 - 信号异步通知——signal
 
 ## 机制与策略
@@ -197,3 +197,67 @@ module_exit(gpiokey_exit);
 ```
 
 ![按键中断阻塞访问效果](https://i.loli.net/2019/08/18/iX8BPOrq1pw74aH.gif)
+
+## 多路复用IO模型-poll
+
+如果程序只监听一个设备，那用阻塞或非阻塞足够了，但如果设备数量繁多呢？比如我们的键盘，有一百多个键，难道每次都要全部扫描一遍有没有被按下？(当然，键盘事件有另外的机制，这里只是举个例子)
+
+这个时候轮询操作就非常有用了，据我所知有很多小型的网络服务正是用此机制实现的高性能并发访问，简单来说，就是把成千上万个socket句柄放到一种名叫`FD_SET`的集合里，然后通过`select()/epoll()`同时监听集合里的句柄状态，其中任何一个socket可读写时就唤醒进程并及时响应。
+
+综上，设备驱动要做的，便是实现`select/epoll`的底层接口。而有关select的应用层开发这里就不介绍了，网上一大堆。
+
+驱动模块的多路复用实现其实非常简单，和读写接口一样，你只需实现`file_operations`里的poll接口：
+```c
+#include <linux/poll.h>
+
+// file_operations->poll
+// 由驱动自行实现多路复用功能
+__poll_t (*poll) (struct file *, struct poll_table_struct *);
+
+// 在具体实现poll接口是需要调用
+// 它负责加入驱动的等待队列，让进程阻塞，直到队列被唤醒
+void poll_wait(struct file * filp, wait_queue_head_t * wait_address, poll_table *p);
+
+// 当等待队列被唤醒后，或者异常情况下
+// 驱动还需要返回掩码，告诉用户层，设备当前的可操作状态
+#define POLLIN		0x0001  // 可读
+#define POLLPRI		0x0002  // 紧急数据可读
+#define POLLOUT		0x0004  // 可写
+#define POLLERR		0x0008  // 错误
+#define POLLHUP		0x0010  // 被挂起
+#define POLLNVAL	0x0020  // 非法
+
+#define POLLRDNORM	0x0040  // 普通数据可读
+#define POLLRDBAND	0x0080  // 优先数据可读
+#define POLLWRNORM	0x0100  // 普通数据可写
+#define POLLWRBAND	0x0200  // 优先数据可写
+#define POLLMSG     0x0400  // 有消息
+#define POLLREMOVE	0x1000  // 被移除
+#define POLLRDHUP   0x2000  // 读被挂起
+```
+
+结合第二小结的等待队列，实现gpio按键的多路复用IO就非常简单了：
+
+```c
+// 实现内核的poll接口
+static __poll_t gpiokey_poll(struct file *filp, struct poll_table_struct *wait)
+{
+  __poll_t mask = 0;;
+  
+  // 加入等待队列
+  poll_wait(filp, &r_wait, wait);
+  if (gpio_get_value(KEY_GPIO)) {
+    // 按键设备不存在写，所以总是返回可读
+    mask = POLLIN | POLLRDNORM;
+  }
+
+  return mask;
+}
+
+// 注意接口要加入到文件操作描述里
+struct file_operations fops = {
+  .owner = THIS_MODULE,
+  .read = gpiokey_read,
+  .poll = gpiokey_poll,
+};
+```
