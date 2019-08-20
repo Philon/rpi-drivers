@@ -1,4 +1,4 @@
-# 树莓派驱动开发实战03：异步IO
+# 树莓派驱动开发实战03：设备IO访问技术
 
 本文是上一篇《GPIO驱动之按键中断》的扩展，之前的文章侧重于中断原理及Linux/IRQ基础，用驱动实现了一个按键切换LED灯色的功能。但涉及中断的场景，就会拔出萝卜带出泥要实现IO的同步/异步访问方式。归根结底，驱动要站在(用户层)接口调用的角度，除了实现自身的功能，还要为用户层提供一套良好的访问机制。本文主要涉及以下知识点：
 
@@ -267,11 +267,11 @@ struct file_operations fops = {
 
 ## 异步通知-信号
 
-不论IO阻塞/非阻塞还是多路复用，都是由应用程序主动向设备发起访问，有没有一种机制，就像邮箱一样，当有信息来临时在通知用户，用户仅仅是被动接收。答：信号！
+不论IO阻塞、非阻塞还是多路复用，都是由应用程序主动向设备发起访问，有没有一种机制，就像邮箱一样，当有信息来临时再通知用户，用户仅仅是被动接收——答：信号！
 
 信号本质上来说，就是软件层对中断的一种模拟。正如常见的`Ctrl+C`、`kill`等，都是向进程发送信号的手段。所以信号也可以理解为是一种特殊的中断号或事件ID。其实在Linux应用开发中，会涉及很多的“终止/定时/异常/掉电”等信号捕获，我们写的程序之所以能被`Ctrl+C`终止，就是因为在应用接口里已经实现了相关信号的捕获处理。
 
-为了更好地理解设备驱动的信号接口实现，必须先站在用户层的角度看看信号是如何被调用的。有关Linux常用的标准信号这里也不展开讨论，请用好互联网。这里仅仅是看一个应用程序如何接收指定设备的`SIGIO`信号的：
+为了更好地理解设备驱动有关信号机制的实现，必须先站在用户层的角度看看信号是如何被调用的。有关Linux常用的标准信号这里也不展开讨论，请用好互联网。这里仅仅是看一个应用程序如何接收指定设备的`SIGIO`信号的：
 
 ```c
 #include <stdio.h>
@@ -279,6 +279,7 @@ struct file_operations fops = {
 #include <signal.h>
 #include <sys/fcntl.h>
 
+// 按键信号的处理函数
 void on_keypress(int sig)
 {
   printf("key pressed!!\n");
@@ -297,20 +298,117 @@ int main(int argc, char* argv[])
   signal(SIGIO, on_keypress);
 
   // 以下无关紧要，就是等到程序退出
+  printf("I'm doing something ...\n");
   getchar();
-
   close(fd);
   return 0;
 }
 ```
 
+从以上代码来看，应用程序要实现信号捕获需要操作：
+
+1. 用`F_SETOWN`让设备文件指向自己，确保信号的传输目的地
+2. 用`O_ASYNC`或者`FASYNC`标志告诉驱动(即调用驱动的`xxx_fasync`接口)，我要去做其他事了，有情况请主动通知我
+3. 设置信号捕获及相关处理handler
+
+所以对应的，内核模块也需要实现信号的发送也需要三个步骤：
+
+1. `filp->f_onwer`指向进程ID，这点已经又内核完成，不用再实现
+2. 实现`xxx_fasync()`接口，在里面初始化一个`fasync_struct`用于信号处理
+3. 当有情况时，使用`kill_fasync()`发送信号给进程
+
+内核具体接口如下：
 
 ```c
+// 设备文件的异步接口，当用户层标记了O_ASYNC或FASYNC时触发
 struct file_operations {
   int (*fasync) (int fd, struct file *filp, int mode);
   ...
 };
+
+// 异步“小助手”，初始化用，一般在xxx_fasync()接口里调用
+// 前面三个参数由用户层传进来，最后一个是“异步队列”，该函数会为其分配内存初始化
+int fasync_helper(int fd, struct file *filp, int mode, struct fasync_struct **fa);
+
+// 通过fa，发送信号到进程
+// 后两个参数为信号ID、可读/可写状态
+void kill_fasync(struct fasync_struct **fa, int sig, int band);
+
+// 最后务必注意，在xxx_close或xxx_release中让文件描述从异步队列中剥离
+// 否则用户进程挂了，驱动还一直向其发送信号，岂不有病
+static int xxx_close(struct inode *node, struct file *filp)
+{
+  ...
+  xxx_fasync(-1, filp, 0);
+}
 ```
+
+搞清楚了内核关于异步信号的机制，下面用让gpiokey支持SIGIO信号吧！
+
+```c
+static struct {
+  int irq;                  // 按键GPIO中断号
+  struct timer_list delay;  // 防抖延时
+  wait_queue_head_t r_wait; // IO阻塞等待队列
+  struct fasync_struct* fa; // 异步描述
+} dev;
+
+// 实现fops->gpiokey_fasync接口，支持用户层的FASYNC标记
+// 将用户进程文件描述添加到异步队列中
+static int gpiokey_fasync(int fd, struct file *filp, int mode)
+{
+  return fasync_helper(fd, filp, mode, &dev.fa);
+}
+
+// 用户进程关闭设备时，务必将其从异步队列中剥离
+static int gpiokey_close(struct inode *node, struct file *filp)
+{
+  gpiokey_fasync(-1, filp, 0);
+  return 0;
+}
+
+// 当按键中断触发后，将信号发送至用户进程
+static irqreturn_t on_key_pressed(int irq, void* dev_id)
+{
+  mod_timer(&dev.delay, jiffies + (HZ/20));
+  return IRQ_HANDLED;
+}
+static void on_delay50(struct timer_list* timer)
+{
+  if (gpio_get_value(KEY_GPIO)) {
+    wake_up_interruptible(&dev.r_wait);   // 唤醒阻塞队列
+    kill_fasync(&dev.fa, SIGIO, POLL_IN); // 发送SIGIO异步信号
+  }
+}
+
+struct file_operations fops = {
+  ...
+  .fasync = gpiokey_fasync,
+  .release = gpiokey_close,
+};
+```
+
+从输出结果中可以看到，程序启动并执行后续，完全没有监听设备，当按键被按下时，信号传回进程并触发了`on_keypress()`函数。
+
+```sh
+philon@rpi:~/modules $ sudo insmod gpiokey.ko
+philon@rpi:~/modules $ ./signal_test 
+I'm doing something ...
+key pressed!!
+key pressed!!
+```
+
+## 异步IO
+
+自Linux2.6以后，IO的异步访问又多了一种新方式——`aio`，此方式在实际开发中并不多见，尤其是嵌入式领域！因此本文不打算深入讨论，这里作为知识扩展仅做个简单介绍。
+
+异步IO的核心思想就是——回调，例如`aio_read(struct aiocb *cb)`和`aio_write(truct aiocb *cb)`，程序调用该函数后不会阻塞，当文件读写就绪后，会自动根据`cb`描述进行回调。
+
+此外，AIO有应用层基于线程的glibc实现，以及内核层的fops接口实现，甚至还有类型libuv、libevent这样的事件驱动的第三方框架可供使用。
+
+就我个人而言，技术是把双刃剑，回调是一种看似美妙的骚操作，但如果你编写的业务具有强逻辑性，那回调在时序上的失控，以及返回状态的多样化，会随着代码的壮大而进入回调陷阱，深深地无法自拔。给我这种感受的并非C语言，而是JavaScript。
+
+总之，没有最优秀的技术，只有最适用的场景！我的原则是：用回调，远离嵌套回调。
 
 ## 小结
 

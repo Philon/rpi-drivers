@@ -21,6 +21,7 @@ int main(int argc, char* argv[])
   signal(SIGIO, on_keypress);
 
   // 以下无关紧要，就是等到程序退出
+  printf("I'm doing something ...\n");
   getchar();
 
   close(fd);

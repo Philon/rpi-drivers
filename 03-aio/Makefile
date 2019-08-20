@@ -10,7 +10,7 @@ TEST_OUT := $(TEST_OBJ:%.o=%)
 export ARCH = arm
 export CROSS_COMPILE = /opt/arm-mac-linux-gnueabihf/bin/arm-mac-linux-gnueabihf-
 
-all: module
+all: module test
 
 module:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
