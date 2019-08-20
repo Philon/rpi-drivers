@@ -61,6 +61,12 @@ static ssize_t gpiokey_read(struct file *filp, char __user *buf, size_t len, lof
   return 0;
 }
 
+static struct fasync_struct* aqueue;
+static int gpiokey_fasync(int fd, struct file *filp, int mode)
+{
+  return fasync_helper(id, filp, aqueue);
+}
+
 static long gpiokey_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
   return 0;
@@ -80,6 +86,7 @@ static void on_delay50(struct timer_list* timer)
   if (gpio_get_value(KEY_GPIO)) {
     // 按下按键后，唤醒阻塞队列
     wake_up_interruptible(&r_wait);
+    kill_fasync(&aqueue, SIGIO, POLL_IN);
   }
 }
 

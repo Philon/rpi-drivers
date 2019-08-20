@@ -11,8 +11,8 @@
 
 Linux的核心思想之一就是“一切皆文件”，而这其中最重要的原则便是“提供机制，而非策略”。文件——内核层与用户层分水岭，通过文件，用户可以用简单而统一的方式去访问复杂而多样的设备，且不必操心设备内部的具体细节。然而哪些部分该驱动实现，哪些部分又该留给用户实现，这是需要拿捏的，我个人理解：
 
-- 机制，提供某个功能范围的实现形式、框架、标准
-- 策略，提供某种功能的具体实现方法和细节
+- 机制，相当于怎么做，提供某个功能范围的实现形式、框架、标准
+- 策略，相当于做什么，提供某种功能的具体实现方法和细节
 
 以上一篇按键中断的驱动为例——“按一下切换一种灯色”，显然，这根本不符合驱动设计原则。首先，驱动把两种设备打包进一个程序；其次，驱动实现了“切换灯色”这个具体业务功能(策略)；最后，驱动根本没有提供用户层的访问机制。
 
@@ -202,7 +202,7 @@ module_exit(gpiokey_exit);
 
 如果程序只监听一个设备，那用阻塞或非阻塞足够了，但如果设备数量繁多呢？比如我们的键盘，有一百多个键，难道每次都要全部扫描一遍有没有被按下？(当然，键盘事件有另外的机制，这里只是举个例子)
 
-这个时候轮询操作就非常有用了，据我所知有很多小型的网络服务正是用此机制实现的高性能并发访问，简单来说，就是把成千上万个socket句柄放到一种名叫`FD_SET`的集合里，然后通过`select()/epoll()`同时监听集合里的句柄状态，其中任何一个socket可读写时就唤醒进程并及时响应。
+这个时候轮询操作就非常有用了，据我所知有很多小型的网络服务正是用此机制实现的高性能并发访问，简单来说，就是把成千上万个socket句柄放到一种名叫`fd_set`的集合里，然后通过`select()/epoll()`同时监听集合里的句柄状态，其中任何一个socket可读写时就唤醒进程并及时响应。
 
 综上，设备驱动要做的，便是实现`select/epoll`的底层接口。而有关select的应用层开发这里就不介绍了，网上一大堆。
 
@@ -215,11 +215,14 @@ module_exit(gpiokey_exit);
 __poll_t (*poll) (struct file *, struct poll_table_struct *);
 
 // 在具体实现poll接口是需要调用
-// 它负责加入驱动的等待队列，让进程阻塞，直到队列被唤醒
+// 该函数本身不会引发阻塞，仅仅是把select的等待指向驱动模块
+// 睡眠是由用户层等select()自身完成的
+// 当它遍历完全部的设备文件后，相当于把自己的等待节点指向了每一个设备驱动
+// 任何一个设备唤醒时都会触发select唤醒
 void poll_wait(struct file * filp, wait_queue_head_t * wait_address, poll_table *p);
 
-// 当等待队列被唤醒后，或者异常情况下
-// 驱动还需要返回掩码，告诉用户层，设备当前的可操作状态
+// 既然poll接口不会阻塞，那就直接告诉用户层，设备当前的可操作状态
+// 便于select判断文件的读写状态
 #define POLLIN		0x0001  // 可读
 #define POLLPRI		0x0002  // 紧急数据可读
 #define POLLOUT		0x0004  // 可写
@@ -236,18 +239,18 @@ void poll_wait(struct file * filp, wait_queue_head_t * wait_address, poll_table 
 #define POLLRDHUP   0x2000  // 读被挂起
 ```
 
-结合第二小结的等待队列，实现gpio按键的多路复用IO就非常简单了：
+结合第二小结的等待队列，实现gpio按键的多路复用IO就非常简单了，只需要在原有的代码里加入下面这段：
 
 ```c
 // 实现内核的poll接口
 static __poll_t gpiokey_poll(struct file *filp, struct poll_table_struct *wait)
 {
-  __poll_t mask = 0;;
+  __poll_t mask = 0;  // 设备的可操作状态
   
   // 加入等待队列
   poll_wait(filp, &r_wait, wait);
   if (gpio_get_value(KEY_GPIO)) {
-    // 按键设备不存在写，所以总是返回可读
+    // 按键设备不存在写，所以总是返回可读，如果可以时
     mask = POLLIN | POLLRDNORM;
   }
 
@@ -261,3 +264,60 @@ struct file_operations fops = {
   .poll = gpiokey_poll,
 };
 ```
+
+## 异步通知-信号
+
+不论IO阻塞/非阻塞还是多路复用，都是由应用程序主动向设备发起访问，有没有一种机制，就像邮箱一样，当有信息来临时在通知用户，用户仅仅是被动接收。答：信号！
+
+信号本质上来说，就是软件层对中断的一种模拟。正如常见的`Ctrl+C`、`kill`等，都是向进程发送信号的手段。所以信号也可以理解为是一种特殊的中断号或事件ID。其实在Linux应用开发中，会涉及很多的“终止/定时/异常/掉电”等信号捕获，我们写的程序之所以能被`Ctrl+C`终止，就是因为在应用接口里已经实现了相关信号的捕获处理。
+
+为了更好地理解设备驱动的信号接口实现，必须先站在用户层的角度看看信号是如何被调用的。有关Linux常用的标准信号这里也不展开讨论，请用好互联网。这里仅仅是看一个应用程序如何接收指定设备的`SIGIO`信号的：
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/fcntl.h>
+
+void on_keypress(int sig)
+{
+  printf("key pressed!!\n");
+}
+
+int main(int argc, char* argv[])
+{
+  // 第一步：将驱动的拥有者指向本进程，否则设备信号不知道发给谁
+  int oflags = 0;
+  int fd = open("/dev/mykey", O_RDONLY);
+  fcntl(fd, F_SETOWN, getpid());
+  oflags = fcntl(fd, F_GETFL) | O_ASYNC;
+  fcntl(fd, F_SETFL, oflags);
+
+  // 第二步：捕获想要的信号，并绑定到相关处理函数
+  signal(SIGIO, on_keypress);
+
+  // 以下无关紧要，就是等到程序退出
+  getchar();
+
+  close(fd);
+  return 0;
+}
+```
+
+
+```c
+struct file_operations {
+  int (*fasync) (int fd, struct file *filp, int mode);
+  ...
+};
+```
+
+## 小结
+
+- Linux内核模块应当“提供机制，而非策略”
+- 阻塞IO是在用户层读写访问时，是进程睡眠，由驱动来唤醒
+- 非阻塞IO是有`IO_NONBLOCK`标记时，当资源不可访问时，直接返回`-EAGAIN`
+- 多路复用IO是通过`select/epoll`进行多个设备监听，驱动须实现对应的`fops->poll`接口
+- 异步IO即信号，由设备驱动作为信号源，主动向进程发送通知
+- 不同的IO同步/异步访问机制无优劣之分，而是取决于具体的应用场景
+- 务必搞懂`等待队列`，它贯穿以上几种IO访问机制
