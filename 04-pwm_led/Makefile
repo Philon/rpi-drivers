@@ -12,7 +12,11 @@ CLFAGS += -std=c99
 export ARCH = arm
 export CROSS_COMPILE = /opt/arm-mac-linux-gnueabihf/bin/arm-mac-linux-gnueabihf-
 
-all: module test
+all: module test install
+
+install: module
+	scp $(obj-m:%.o=%.ko) rpi.local:~/modules
+	scp $(TEST_OUT) rpi.local:~/modules
 
 module:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
