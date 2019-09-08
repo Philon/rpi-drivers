@@ -47,7 +47,7 @@ int main(int argc, char* argv[]) {
       perror("ioctl");
       break;
     }
-  } while (key != 'q');
+  }
 
   close(fd);
   return 0;
