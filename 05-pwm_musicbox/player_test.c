@@ -14,26 +14,6 @@
 //   "0 0 ((3` 1`) 2`) (6 5) 6 (3` 5`) (3` 5`) (2` 3') (6 7) (1` 6) 5 - 0 "
 //   "5 (3` 5`) (3` 6) 1' (2` 2`) (2` 1`) 3` 1' 6 - - - ";
 
-// 保卫黄河
-// static const char* music = 
-//   "(5` (4`) 3` 2` 1` 7 1` 0) (3 (2) 3 5 (6 5 6 1`) 5 0) "
-//   "(6` (5`) 4` 3` 2` 1` 7 6 5 6 1` 2` 5 6 2` 3` 5 6 3` 4` 5 6 4` 5`) "
-//   "1` (1` 3) 5- 1` (1` 3) 5-  (3) 3 (5) 1` 1` (6) 6 (4) 2` 2` "
-//   "(5 (6) 5 4) (3 2 3 0) (5 (6) 5 4) (3 2 3 1)"
-//   "5 6 1` 3 (5 (3`) 2` 1`) 5 6 3- "
-//   "5 6 1` 3 (5 (3`) 2` 1`) 5 6 1`- "
-//   "(5 (3 5) 6 5 1` 1`) 0 (5 (3 5) 6 5 2` 2`) 0 "
-//   "(5 6 1` 1`) 0 (5 6 2` 2`) 0 (5 (6) 3` 3`) (5 (6) 3` 2` 1`----)";
-
-int readline(FILE* fp, char* line) {
-  
-  while (!feof(fp) || line[0] == '\0' || line[0] == '\n' || line[0] == '#') {
-    fscanf(fp, "%[^\n]%*c", line);
-    printf("get line: %s\n", line);
-  }
-  return strlen(line);
-}
-
 int main(int argc, char* argv[]) {
   if (argc < 2) {
     printf("Usage: ./player <musicfile>");
@@ -52,43 +32,45 @@ int main(int argc, char* argv[]) {
     exit(0);
   }
 
-  while (!feof(music)) {
-    char line[128] = {'\0'};
-    readline(music, line);
-    printf("%s\n", line);
+  char line[128] = {'\0'};
+  if (fgets(line, sizeof(line), music) == NULL) {
+    perror("read music");
+    exit(0);
   }
-  exit(0);
 
-  // if (ioctl(fd, MUSICBOX_SET_BEAT, 500) < 0
-  //    || ioctl(fd, MUSICBOX_SET_VOLUMN, 20) < 0
-  //    || ioctl(fd, MUSICBOX_SET_KEY, 'C') < 0) {
-  //   perror("ioctl");
-  //   exit(0);
-  // }
+  // 节拍以一秒为基准，2/4拍即没拍500ms
+  int beat = 800 * (line[2]-'0') / (line[4]-'0');
+  if (ioctl(fd, MUSICBOX_SET_BEAT, beat) < 0
+   || ioctl(fd, MUSICBOX_SET_VOLUMN, 80) < 0
+   || ioctl(fd, MUSICBOX_SET_KEY, line[0]) < 0) {
+    perror("ioctl");
+    exit(0);
+  }
 
-  // char tone[32] = {'\0'};
-  // const char* p = music;
-  // do {
-  //   switch (*p) {
-  //   case ' ':
-  //     break;
-  //   case '(':
-  //     ioctl(fd, MUSICBOX_SET_BEAT, ioctl(fd, MUSICBOX_GET_BEAT) / 2);
-  //     break;
-  //   case ')':
-  //     ioctl(fd, MUSICBOX_SET_BEAT, ioctl(fd, MUSICBOX_GET_BEAT) * 2);
-  //     break;
-  //   }
+  while (fgets(line, sizeof(line), music)) {
+    // char line[128] = {'\0'};
+    // readline(music, line);
+    printf("%s", line);
+    if (line[0] == '#' || line[0] == '\0') {
+      continue;
+    }
 
-  //   if (*p >= '0' && *p <= '7') {
-  //     int len = (p[1] == '`' || p[1] == '.') ? 2 : 1;
-  //     while (p[len] == '-') len++;
-  //     memset(tone, '\0', sizeof(tone));
-  //     strncpy(tone, p, len);
-  //     write(fd, tone, len);
-  //     printf("wirte %s\n", tone);
-  //   }
-  // } while (*++p);
+    char* p = line;
+    while (*p) {
+      if (*p == '(') {
+        ioctl(fd, MUSICBOX_SET_BEAT, ioctl(fd, MUSICBOX_GET_BEAT) / 2);
+      } else if (*p == ')') {
+        ioctl(fd, MUSICBOX_SET_BEAT, ioctl(fd, MUSICBOX_GET_BEAT) * 2);
+      } else if (*p >= '0' && *p <= '7') {
+        char* q = p+1;
+        while (*q == '`') q++;
+        while (*q == '.') q++;
+        while (*q == '-') q++;
+        write(fd, p, q-p);
+      }
+      p++;
+    }
+  }
 
   close(fd);
   fclose(music);

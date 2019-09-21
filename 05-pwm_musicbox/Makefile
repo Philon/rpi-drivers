@@ -22,6 +22,7 @@ module:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
 
 test: $(TEST_OUT)
+	scp -r ./music/ rpi.local:~/modules/
 $(TEST_OUT): %:%.o
 	$(CROSS_COMPILE)gcc $(LFLAGS) -o $@ $<
 $(TEST_OBJ): %.o:%.c
