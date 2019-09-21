@@ -7,7 +7,7 @@ TEST_SRC := $(wildcard *_test.c)
 TEST_OBJ := $(TEST_SRC:%.c=%.o)
 TEST_OUT := $(TEST_OBJ:%.o=%)
 
-CLFAGS += -std=c99
+CLFAGS += -std=gnu99
 
 export ARCH = arm
 export CROSS_COMPILE = /opt/arm-mac-linux-gnueabihf/bin/arm-mac-linux-gnueabihf-

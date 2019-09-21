@@ -2,10 +2,12 @@
 #define RPI_DRIVER_MUSICBOX_H
 
 typedef enum {
-  MUSICBOX_SET_VOLUMN,
+  MUSICBOX_SET_VOLUMN = 0x12,  // 音量，取值0-100
   MUSICBOX_GET_VOLUMN,
-  MUSICBOX_SET_BEAT,
+  MUSICBOX_SET_BEAT,    // 节拍，取值1-1000毫秒
   MUSICBOX_GET_BEAT,
+  MUSICBOX_SET_KEY,     // 音调，取值'A'-'G'
+  MUSICBOX_GET_KEY,
 } musicbox_cmd_t;
 
 #endif // !RPI_DRIVER_MUSICBOX_H
