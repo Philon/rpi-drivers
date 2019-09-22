@@ -15,12 +15,12 @@ MODULE_AUTHOR("Philon | https://ixx.life");
 #define ONE_SECOND  1000000000  // 以纳秒为单位的一秒
 
 static const int tones[][14] = {
-  //C    D     E     F     G     A     B
-  //1.   2.    3.    4.    5.    6.    7.
+  //   C    D     E     F     G     A     B
+  //   1.   2.    3.    4.    5.    6.    7.
   {0, 131, 147,  165,  175,  196,  221,  248,  278,  312,  330,  371,  416,  476},
-  //1    2     3     4     5     6     7 
+  //   1    2     3     4     5     6     7 
   {0, 262, 294,  330,  350,  393,  441,  496,  556,  624,  661,  742,  833,  935},
-  //1'   2'    3'    4'    5'    6'    7'
+  //   1'   2'    3'    4'    5'    6'    7'
   {0, 525, 589,  661,  700,  786,  882,  990,  1112, 1248, 1322, 1484, 1665, 1869},
 };
 
@@ -46,7 +46,7 @@ static ssize_t musicbox_write(struct file *filp, const char __user *buf, size_t 
   int pitch = (buf[1] == '`') ? 2 : (buf[1] == '.' ? 0 : 1);
   int tone = ONE_SECOND / tones[pitch][note];
   int volume = tone * musicbox.volume / 100;
-  int delay = HZ / musicbox.beat * (len - (pitch > 1)); // 但音符后跟着'-'就延长一倍，如2--
+  int delay = HZ / musicbox.beat * (len - (pitch != 1)); // 但音符后跟着'-'就延长一倍，如2--
 
   if (musicbox.playing) {
     if (filp->f_flags & O_NONBLOCK) {
