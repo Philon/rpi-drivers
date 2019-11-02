@@ -2,7 +2,7 @@
 
 从《树莓派驱动开发实战》的第一篇至今，我都是在写独立的设备驱动，并没有触及到内核的高阶玩法。之后的驱动开发更多会涉及USB、I2C、UART之类的总线设备，也为了更好地理解Linux驱动架构，我觉得不妨先学习**平台驱动设备**模型。
 
-平台-驱动-设备(Platform-Driver-Device)，即以面向对象的角度，将那些具有共性的代码抽象到一个驱动里，并通过平台总线匹配到对应的设备当中。不过在详细介绍PDD模型之前，需要先了解驱动-总线-设备模型。
+平台-驱动-设备(Platform-Driver-Device)，即以面向对象的思维，将那些具有共性的代码抽象到一个驱动里，并通过平台总线匹配到对应的设备当中。在详细介绍PDD模型之前，需要先了解驱动-总线-设备模型。
 
 ## 驱动-总线-设备模型
 
@@ -27,15 +27,15 @@ clocksource  event_source  hid    mdio_bus         mmc       platform  spi
 
 ## 平台总线、平台驱动、平台设备
 
-**platform是一种虚拟总线**。与`usb_bus tty_bus spi_bus`等物理总线平级。
+**platform是一种虚拟总线**。它是“驱动-总线-设备”模型的一种实现，与`usb_bus tty_bus spi_bus`等物理总线平级。
 
 在编写字符设备`cdev`时需要关心主、次设备号，还要用mknod命令创建对应的设备节点。但不是每个设备都需要固定的设备号的，内核提供了一个叫`misc`混杂设备的概念，不用关心设备号还能自动创建设备节点。统一主设备号固定为10，本质上就是基于cdev再封装了一层。
 
-同理，硬件物理总线：USB、I2C、SPI、UART等，它的时序/电平/通信机制都不一样，在内核中会有对应的`bus_type`，对应的设备归口对应的总线和驱动。但也有些设备并不挂到总线上，如：led、蜂鸣器、摄像头等，为了符合驱动-总线-设备的架构，就把它们统一归口到Platform这根“假”总线下。
+同理，硬件物理总线：USB、I2C、SPI、UART等，它的时序/电平/通信机制都不一样，在内核中会有对应的`bus_type`，同类设备归口对应的总线和驱动。但也有些设备并不挂到总线上，如：led、蜂鸣器、摄像头等，为了符合驱动-总线-设备的架构，就把它们统一归口到Platform这根“假”总线下。
 
 简单理解，平台设备的角色有点像混杂设备的架构升级版。实际研发中，很多开发板的外围模块都会划归给platform管理。
 
-这种做法的好处很明显，假设一个路由器有8个LED指示灯，那我只需要编写一个`platform_led_driver`驱动和8个`platform_led_device`描述即可，剩下的事情交给内核自带的`platform_bus`去匹配就好。
+这种做法的好处很明显，假设一个路由器有8个LED指示灯，那我只需要编写一个`led_platform_driver`驱动和8个`led_platform_device`描述即可，剩下的事情交给内核自带的`platform_bus`去匹配就好。
 
 如果你愿意，可以浏览下内核目录`arch/arm/mach-xxx`，非常多对吧。其实这些目录大多是平台设备描述，用于适配各大厂商不同型号的处理器或开发板。这玩意儿后来招致Linus大怒——简直就是一坨屎！毕竟这是各家针对硬件细节的BSP(板级支持包)，你把一份份电路板“说明书”提交至通用的内核代码里，这是人干的事儿？
 
@@ -43,7 +43,7 @@ clocksource  event_source  hid    mdio_bus         mmc       platform  spi
 
 ## 最简单的PDD实例
 
-以下只是以led为例说明platform相关接口用法，并未真正实现led驱动。
+根据上述，内核已经实现了`platform_bus`，所以我们只需要实现两边的`xxx_driver`和`xxx_device`即可，然后把它们挂到平台总线上去，总线会自动进行匹配的。以下只是以led为例说明platform相关接口用法，并未真正实现led驱动。
 
 led_driver.c
 
@@ -78,7 +78,7 @@ static struct platform_driver led_driver = {
   },
 };
 
-// 【宏】向内核注册统一的led驱动
+// 【宏】将led驱动挂到平台总线上
 // 相当于同时定义了模块的入口和出口函数
 // module_init(platform_driver_register)
 // module_exit(platform_driver_unregister)
@@ -94,7 +94,7 @@ led_device.c
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Philon | https://ixx.life");
 
-// 最好实现该接口，否则在设备释放的时候内核会报错
+// ⚠️最好实现该接口，否则在设备释放的时候内核会报错
 static void led_release(struct device* pdev) {
   printk("led release!\n");
 }
@@ -107,7 +107,7 @@ static struct platform_device led_device = {
   },
 };
 
-// 注册平台设备
+// 将设备注册到平台总线
 static int leddev_init(void) {
   platform_device_register(&led_device);
   return 0;
@@ -120,7 +120,14 @@ static void leddev_exit(void) {
 module_exit(leddev_exit);
 ```
 
-首先，加载led_driver.ko模块后，可以在平台总线目录下看到`my_led`驱动了。然后，加载led_device.ko模块后，同样可以在平台总线设备里查看到`my_led.0`的设备。
+简述一下代码的逻辑：
+
+1. platform_bus监听到有device注册时，会查看它的`device.name`
+2. platform_bus会查找所有的`driver.name`，找到之后将设备和驱动进行绑定
+3. 绑定成功后，`platform_driver.probe()`将触发，刚才的设备作为参数传递进去
+4. 剩下的事情，就看你如何实现platform_driver了
+
+实际操作下，加载led_driver.ko模块后，可以在平台总线目录下看到`my_led`驱动了。然后，加载led_device.ko模块后，同样可以在平台总线设备里查看到`my_led.0`的设备。
 ```sh
 # 平台总线里查看my_led驱动
 philon@rpi:~/modules $ sudo insmod led_driver.ko 
@@ -140,5 +147,9 @@ philon@rpi:~/modules $ dmesg
 ```
 
 ⚠️注意：不必操心`driver/device`模块的加载顺序，谁先谁后都一样，platform_bus会料理好一切。
+
+以上，便是PDD模型的一个基本展示，如果你愿意，可以在led_device.c文件里多注册几个设备。
+
+当然，你可能觉得这么做很麻烦，毕竟“设备”源码仅仅是描述一下硬件的细节及其使用的资源。那好，现在来看看更灵活的设备定义方式——设备树。
 
 ## 设备树
