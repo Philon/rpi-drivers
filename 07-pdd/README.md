@@ -37,7 +37,7 @@ clocksource  event_source  hid    mdio_bus         mmc       platform  spi
 
 这种做法的好处很明显，假设一个路由器有8个LED指示灯，那我只需要编写一个`led_platform_driver`驱动和8个`led_platform_device`描述即可，剩下的事情交给内核自带的`platform_bus`去匹配就好。
 
-如果你愿意，可以浏览下内核目录`arch/arm/mach-xxx`，非常多对吧。其实这些目录大多是平台设备描述，用于适配各大厂商不同型号的处理器或开发板。这玩意儿后来招致Linus大怒——简直就是一坨屎！毕竟这是各家针对硬件细节的BSP(板级支持包)，你把一份份电路板“说明书”提交至通用的内核代码里，这是人干的事儿？
+如果你愿意，可以浏览下内核目录`arch/arm/mach-xxx`，非常多对吧。其实这些目录大多是SoC的硬件细节描述，用于适配各大厂商不同型号的处理器或开发板。这玩意儿后来招致Linus大怒——简直就是一坨屎！毕竟这是各家针对硬件的BSP(板级支持包)，你把一份份电路板“说明书”提交至通用的内核代码里，这是人干的事儿？
 
 因为这个典故，才有了后来的`device-tree`，之后详细介绍，现在先巩固PDD模型的知识。
 
@@ -153,3 +153,15 @@ philon@rpi:~/modules $ dmesg
 当然，你可能觉得这么做很麻烦，毕竟“设备”源码仅仅是描述一下硬件的细节及其使用的资源。那好，现在来看看更灵活的设备定义方式——设备树。
 
 ## 设备树
+
+### 基础
+
+### 树莓派的玩法
+
+本小结是从👉[树莓派DeviceTree的官方介绍中](https://www.raspberrypi.org/documentation/configuration/device-tree.md)总结而来，如果不放心我的说法，可以看原文。
+
+树莓派(或者说博通BCM2837)的启动流程：
+
+上电——GPU0——进入Fat32分区——加载bootcode.bin——加载start.elf——加载kernel.img
+
+我们知道Fat32分区其实被挂在到了系统的`/boot`目录下，因此整个启动流程的软件部分几乎都可以在该目录下找到。而内核需要的DTB其实是由最后的start.elf传递的，它依赖于`config.txt`，
