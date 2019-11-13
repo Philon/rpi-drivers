@@ -9,7 +9,7 @@ static void led_release(struct device* pdev) {
 }
 
 static struct platform_device led_device = {
-  .name = "my_led",
+  .name = "type0_led",
   .dev = {
     .release = led_release,
   },

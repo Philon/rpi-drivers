@@ -152,6 +152,34 @@ philon@rpi:~/modules $ dmesg
 
 当然，你可能觉得这么做很麻烦，毕竟“设备”源码仅仅是描述一下硬件的细节及其使用的资源。那好，现在来看看更灵活的设备定义方式——设备树。
 
+```c
+// linux-rpi-4.19.y/drivers/base/platform.c 963
+static int platform_match(struct device *dev, struct device_driver *drv)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct platform_driver *pdrv = to_platform_driver(drv);
+
+	/* When driver_override is set, only bind to the matching driver */
+	if (pdev->driver_override)
+		return !strcmp(pdev->driver_override, drv->name);
+
+	/* 首先尝试设备树匹配 OF(Open Firmware Standard) */
+	if (of_driver_match_device(dev, drv))
+		return 1;
+
+	/* Then try ACPI style match */
+	if (acpi_driver_match_device(dev, drv))
+		return 1;
+
+	/* Then try to match against the id table */
+	if (pdrv->id_table)
+		return platform_match_id(pdrv->id_table, pdev) != NULL;
+
+	/* fall-back to driver name match */
+	return (strcmp(pdev->name, drv->name) == 0);
+}
+```
+
 ## 设备树
 
 ### 基础
