@@ -9,20 +9,20 @@ MODULE_AUTHOR("Philon | https://ixx.life");
 
 // 当总线匹配到设备加载时调用该函数
 static int led_probe(struct platform_device* dev) {
-  printk("led probe\n");
+  printk("led %s probe\n", dev->name);
   return 0;
 }
 
 // 当总线匹配到设备卸载时调用该函数
 static int led_remove(struct platform_device* dev) {
-  printk("led removed\n");
+  printk("led %s removed\n", dev->name);
   return 0;
 }
 
 static const struct of_device_id of_leds_id[] = {
-  { .compatible = "leda" },
-  { .compatible = "ledb" },
-  { .compatible = "ledc" },
+  { .compatible = "led_type_a" },
+  { .compatible = "led_type_b" },
+  { .compatible = "led_type_c" },
 };
 // MODULE_DEVICE_TABLE(of, of_leds_id);
 

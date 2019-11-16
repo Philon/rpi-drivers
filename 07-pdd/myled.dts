@@ -6,9 +6,8 @@
     target-path = "/";
     __overlay__ {
       led_a1 {
-        compatible = "leda";
+        compatible = "led_type_a";
       };
     };
-    
   };
 };

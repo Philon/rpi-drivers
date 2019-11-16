@@ -13,16 +13,19 @@ LFLAGS += -lpthread
 export ARCH = arm
 export CROSS_COMPILE = /opt/arm-mac-linux-gnueabihf/bin/arm-mac-linux-gnueabihf-
 
-all: module test install
+all: module dtbo test install
 
-install: module
-	scp $(obj-m:%.o=%.ko) rpi.local:~/modules
+install: module dtbo
+	scp $(obj-m:%.o=%.ko) myled.dtbo rpi.local:~/modules
 ifneq ($(TEST_OUT), )
 	scp $(TEST_OUT) rpi.local:~/modules
 endif
 
 module:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+dtbo:
+	../../linux-rpi-4.19.y/scripts/dtc/dtc -I dts -o myled.dtbo myled.dts
 
 test: $(TEST_OUT)
 $(TEST_OUT): %:%.o
