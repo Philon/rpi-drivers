@@ -1,0 +1,11 @@
+linux-rpi-4.19.y
+.DS_Store
+
+Module.symvers
+modules.order
+.tmp_versions
+*.cmd
+*.mod.*
+*.o
+*.ko
+*.dtbo
